@@ -1,4 +1,4 @@
-# semeval26-05-scripts
+# semeval26-05 -> task scripts cloned from [semeval26-05-scripts](https://github.com/Janosch-Gehring/semeval26-05-scripts)
 Some scripts for Semeval 2026 Task 5. Equivalent to the scoring script on the CodaBench task. More baselines to be added later.
 
 Link to submission website: https://www.codabench.org/competitions/10877/?secret_key=e3c13419-88c6-4c13-9989-8e694a2bc5c0
