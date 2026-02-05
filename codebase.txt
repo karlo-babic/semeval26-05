@@ -1,0 +1,1192 @@
+<onefilellm_output>
+<source type="local_folder" path="../semeval26-05-scripts/">
+
+<file path="data/test.json">
+{
+    "0": {
+        "homonym": "levels",
+        "judged_meaning": "a structure consisting of a room or set of rooms at a single position along a vertical scale",
+        "precontext": "Maya had always been fascinated by the old mansion on the hill. She finally got a chance to explore it when the new owners offered guided tours. As she walked through the grand hallways, she marveled at how endless the building seemed.",
+        "sentence": "There were so many different levels to it.",
+        "ending": "It was tiring walking up and down the stairs; the mansion spanned across five levels.",
+        "choices": "(???)",
+        "average": "(???)",
+        "stdev": "(???)",
+        "nonsensical": "(???)",
+        "sample_id": "2017",
+        "example_sentence": "What level is the conference room on?"
+    },
+</file>
+
+<file path="data/dev.json">
+{
+    "0": {
+        "homonym": "track",
+        "judged_meaning": "a pair of parallel rails providing a runway for wheels",
+        "precontext": "The detectives arrived at the abandoned train station. They were looking for signs of the missing artifact. A faint trail caught their attention.",
+        "sentence": "They followed the track.",
+        "ending": "They began to run along the abandoned railway line, hopping from wooden sleeper to sleeper to avoid twisting an ankle.",
+        "choices": [
+            4,
+            5,
+            3,
+            1,
+            5
+        ],
+        "average": 3.6,
+        "stdev": 1.6733200530681511,
+        "nonsensical": [
+            false,
+            false,
+            false,
+            false,
+            false
+        ],
+        "sample_id": "2371",
+        "example_sentence": "The train glided smoothly along the track."
+    },
+</file>
+
+<file path="data/train.json">
+{
+    "0": {
+        "homonym": "potential",
+        "judged_meaning": "the difference in electrical charge between two points in a circuit expressed in volts",
+        "precontext": "The old machine hummed in the corner of the workshop. Clara examined its dusty dials with a furrowed brow. She wondered if it could be brought back to life.",
+        "sentence": "The potential couldn't be measured.",
+        "ending": "She collected a battery reader and looked on earnestly, willing some life back into the old machine.",
+        "choices": [
+            4,
+            5,
+            2,
+            3,
+            1
+        ],
+        "average": 3.0,
+        "stdev": 1.5811388300841898,
+        "nonsensical": [
+            false,
+            false,
+            false,
+            false,
+            false
+        ],
+        "sample_id": "1843",
+        "example_sentence": "The circuit has a high potential difference."
+    },
+</file>
+
+<file path="format_check.py">
+import json
+import sys
+
+
+def check_formatting(filepath: str, gold_data: dict) -> bool:
+    """
+    Take a prediction filepath as input and print on the command line whether there
+    are any peculiarities about the prediction formatting.
+
+    :param filepath: str path to predictions file (should be jsonl)
+    :param gold_data: dict samples of gold data
+    :return: True = Can Parse, False = Cannot Parse
+    """
+    with open(filepath, "r") as f:
+        lines = f.readlines()
+    questionable_lines = []
+    error_lines = []
+
+    # Handle both data formats: dict (from dev.json) and list (from solution.jsonl)
+    if isinstance(gold_data, dict):
+        expected_ids = list(gold_data.keys())
+    elif isinstance(gold_data, list):
+        expected_ids = [str(item['id']) for item in gold_data]
+    else:
+        print("Error: Unknown gold_data format in format_check.py")
+        return False
+
+    line_ids = []
+    missing_lines = []
+
+    # TODO: check the other keys
+    for line in lines:
+        try:
+            json_line = json.loads(line)
+            pred = json_line["prediction"]
+            pred = int(pred)
+            if pred not in [1, 2, 3, 4, 5]:
+                questionable_lines.append(line)
+
+            index = str(json_line["id"])
+            if index in expected_ids:
+                expected_ids.remove(index)
+            else:
+                print("Error: The following id is unexpected or in the prediction file multiple times. ", index)
+                error_lines.append(line)
+
+        except:
+            error_lines.append(line)
+
+
+    if error_lines:
+        print("Error: The following lines are malformatted or have wrong indices.")
+        print(error_lines)
+        print("The above lines are malformatted or have wrong indices. Please make sure each line is a valid json and check that each index appears exactly once.")
+        return False
+
+    if expected_ids:
+        print("Error: The following ids are expected, but not in the predictions file. ", expected_ids)
+        if len(expected_ids) > 100:
+            print("Maybe a mismatch between the predictions file and the test set?")
+        return False
+
+
+    if questionable_lines:
+        print("Warning: The following lines do not have expected values (1-5). Evaluation can still take place but please check your data.")
+        print(questionable_lines)
+        
+    return True
+
+
+    
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Please give the file to check formatting of as an argument")
+
+    check_formatting(sys.argv[1])
+</file>
+
+<file path="input/res/predictions.jsonl">
+{"id": "0", "prediction": 2}
+{"id": "1", "prediction": 2}
+{"id": "2", "prediction": 1}
+
+</file>
+
+<file path="input/ref/solution.jsonl">
+{"id": "0", "label": [4, 5, 3, 1, 5]}
+{"id": "1", "label": [3, 3, 4, 4, 4]}
+{"id": "2", "label": [5, 5, 2, 3, 4]}
+{"id": "3", "label": [4, 5, 4, 3, 5]}
+
+</file>
+
+<file path="evaluate.py">
+import sys
+import os
+import json
+import statistics
+from scipy.stats import spearmanr
+
+"""
+Usage: python3 evaluate.py filepath set
+filepath: Path to the predictions .jsonl file, e.g. predictions/random_predictions.jsonl 
+set: The split to test on (dev, test, train) - Refers to the files in data/ directory.
+Spearman and Accuracy scores will be printed on command line.
+"""
+
+from format_check import check_formatting
+
+def get_standard_deviation(l):
+    return statistics.stdev(l)
+
+def get_average(l):
+    return sum(l)/len(l)
+
+def is_within_standard_deviation(prediction, labels):
+    avg = get_average(labels)
+    stdev = get_standard_deviation(labels)
+
+    # Is prediction within the range of the average +/- the standard deviation?
+    if (avg - stdev) < prediction < (avg + stdev):
+        return True
+
+    # Is the distance between average and prediction less than one?
+    if abs(avg - prediction) < 1:
+        return True
+
+    # If neither one applies, then this prediction will be counted as "wrong".
+    return False
+
+def spearman_evaluation_score(predictions_filepath: str, gold_data: dict):
+    """
+    Get the spearman score for a prediction filepath on the gold data.
+    It calculates the correlation between the list of predictions and the list of human averages.
+    Score is printed on command line.
+    """
+    gold_list = ["-"] * len(gold_data)
+    pred_list = ["-"] * len(gold_data)
+
+    with open(predictions_filepath, "r") as f:
+        pred_lines = f.readlines()
+
+    for line in pred_lines:
+        line = json.loads(line)
+        gold_list[int(line["id"])] = get_average(gold_data[str(line["id"])]["choices"])
+        pred_list[int(line["id"])] = line["prediction"]
+
+    corr, value = spearmanr(pred_list, gold_list)
+    print(f"----------\nSpearman Correlation: {corr}\nSpearman p-Value: {value}")
+
+
+
+def accuracy_within_standard_deviation_score(predictions_filepath, gold_data):
+    """
+    Get the Acc. w/in SD score.
+    It calculates the proportion of samples where the prediction is within either 1 or +/- standard deviation 
+    of the average human judgment.
+    Score is printed on command line.
+    """
+    with open(predictions_filepath, "r") as f:
+        pred_lines = f.readlines()
+
+    correct_guesses = 0
+    wrong_guesses = 0
+
+    for line in pred_lines:
+        line = json.loads(line)
+        labels = gold_data[str(line["id"])]["choices"]
+        if is_within_standard_deviation(line["prediction"], labels):
+            correct_guesses += 1
+        else:
+            wrong_guesses += 1
+
+    print(f"----------\nAccuracy: {correct_guesses / (correct_guesses + wrong_guesses)} ({correct_guesses}/{correct_guesses+wrong_guesses})")
+
+
+
+if __name__ == "__main__":
+    arguments = sys.argv
+    if len(arguments) < 3:
+        print("Please provide the path to the jsonl predictions file and the set to evaluate on (dev/test). \n" 
+        "Example Usage: python3 evaluate.py predictions/random_predictions.jsonl dev")
+        sys.exit()
+
+    predictions_filepath = arguments[1]
+    if not os.path.exists(predictions_filepath):
+        print("Not a valid predictions filepath, file not found: ", predictions_filepath)
+        sys.exit()
+
+    testset = arguments[2]
+    try:
+        with open("data/" + testset + ".json", "r") as f:
+            gold_data = json.load(f)
+    except:
+        print("No file data/" + testset + ".json found. Make sure the name of the set (train/dev/test) is specified in command line argument #2")
+        sys.exit()
+
+    if not check_formatting(predictions_filepath, gold_data):
+        sys.exit()
+
+    print(f"Everything looks OK. Evaluating file {predictions_filepath} on data/{testset}.json...")
+
+    spearman_evaluation_score(predictions_filepath, gold_data)
+    accuracy_within_standard_deviation_score(predictions_filepath, gold_data)
+
+
+</file>
+
+<file path="requirements.txt">
+scipy==1.16.2
+torch
+transformers
+pyyaml
+tqdm
+</file>
+
+<file path="scoring.py">
+print("Importing...", flush=True)
+
+import sys
+import os
+import json
+
+import statistics
+from scipy.stats import spearmanr
+
+"""
+Usage: python3 scoring.py ref_filepath pred_filepath output_filepath
+Spearman and Accuracy scores will be printed on command line, and scores will be written to the output filepath.
+"""
+
+from format_check import check_formatting
+
+print("Starting Scoring script...", flush=True)
+
+def get_standard_deviation(l):
+    return statistics.stdev(l)
+
+def get_average(l):
+    return sum(l)/len(l)
+
+def get_gold_by_id(id, gold_data):
+    for line in gold_data:
+        if str(line["id"]) == str(id):
+            return line
+
+def is_within_standard_deviation(prediction, labels):
+    avg = get_average(labels)
+    stdev = get_standard_deviation(labels)
+
+    # Is prediction within the range of the average +/- the standard deviation?
+    if (avg - stdev) < prediction < (avg + stdev):
+        return True
+
+    # Is the distance between average and prediction less than one?
+    if abs(avg - prediction) < 1:
+        return True
+
+    # If neither one applies, then this prediction will be counted as "wrong".
+    return False
+
+def spearman_evaluation_score(predictions_filepath: str, gold_data: dict):
+    """
+    Get the spearman score for a prediction filepath on the gold data.
+    It calculates the correlation between the list of predictions and the list of human averages.
+    Score is printed on command line.
+    """
+    gold_list = ["-"] * len(gold_data)
+    pred_list = ["-"] * len(gold_data)
+
+    with open(predictions_filepath, "r") as f:
+        pred_lines = f.readlines()
+
+    for line in pred_lines:
+        line = json.loads(line)
+        gold_list[int(line["id"])] = get_average(get_gold_by_id(line["id"], gold_data)["label"])
+        pred_list[int(line["id"])] = line["prediction"]
+
+    corr, value = spearmanr(pred_list, gold_list)
+    print(f"----------\nSpearman Correlation: {corr}\nSpearman p-Value: {value}")
+
+    return corr
+
+
+
+def accuracy_within_standard_deviation_score(predictions_filepath, gold_data):
+    """
+    Get the Acc. w/in SD score.
+    It calculates the proportion of samples where the prediction is within either 1 or +/- standard deviation 
+    of the average human judgment.
+    Score is printed on command line.
+    """
+    with open(predictions_filepath, "r") as f:
+        pred_lines = f.readlines()
+
+    correct_guesses = 0
+    wrong_guesses = 0
+
+    for line in pred_lines:
+        line = json.loads(line)
+        labels = get_gold_by_id(line["id"], gold_data)["label"]
+        if is_within_standard_deviation(line["prediction"], labels):
+            correct_guesses += 1
+        else:
+            wrong_guesses += 1
+
+    print(f"----------\nAccuracy: {correct_guesses / (correct_guesses + wrong_guesses)} ({correct_guesses}/{correct_guesses+wrong_guesses})")
+
+    return correct_guesses / (correct_guesses + wrong_guesses)
+
+if __name__ == "__main__":
+    arguments = sys.argv
+    if len(arguments) < 3:
+        print("Please provide the path to the jsonl predictions file and the jsonl gold file. \n" 
+        "Example Usage: python3 scoring.py ref_filepath pred_filepath output_dir", flush=True)
+        sys.exit()
+
+    testset = arguments[1]
+    try:
+        with open(testset, "r") as f:
+            testset_lines = f.readlines()
+            gold_data = []
+            for line in testset_lines:
+                gold_data.append(json.loads(line))
+    except:
+        print("No reference file " + testset + " found.", flush=True)
+        sys.exit()
+
+    predictions_filepath = arguments[2]
+    if not os.path.exists(predictions_filepath):
+        print("Not a valid predictions filepath, file not found: ", predictions_filepath, flush=True)
+        sys.exit()
+
+    if not check_formatting(predictions_filepath, gold_data):
+        sys.exit()
+
+    print(f"Everything looks OK. Evaluating file {predictions_filepath} on {testset}", flush=True)
+
+    corr = spearman_evaluation_score(predictions_filepath, gold_data)
+    acc = accuracy_within_standard_deviation_score(predictions_filepath, gold_data)
+
+    results = {"accuracy": acc, "spearman": corr}
+
+    with open(os.path.join(sys.argv[3]), "w") as f:
+        json.dump(results, f)
+
+    print("Results dumped into scores.json successfully.")
+
+
+</file>
+
+<file path="src/trainer.py">
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from tqdm import tqdm
+
+def run_epoch(model, data_loader, optimizer, device, loss_fn=None, is_training=True, aux_weight=0.5):
+    """
+    Runs one epoch of training or evaluation.
+    """
+    model.train() if is_training else model.eval()
+    total_loss = 0
+    
+    # For metrics
+    predictions_expected_value = [] 
+    gold_choices = []
+    gold_averages = []
+
+    # Vector of scores [1, 2, 3, 4, 5] to calculate Expected Value
+    score_values = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0]).to(device)
+
+    # Keys that are NOT inputs to the model
+    non_input_keys = ['id', 'choices', 'target_average', 'target_stdev', 'target_distribution']
+
+    context = torch.enable_grad() if is_training else torch.no_grad()
+
+    with context:
+        for batch in tqdm(data_loader, desc="Training" if is_training else "Evaluating"):
+            inputs = {k: v.to(device) for k, v in batch.items() if k not in non_input_keys}
+            
+            # Forward Pass
+            logits = model(**inputs)
+
+            if is_training:
+                targets_dist = batch['target_distribution'].to(device)
+                
+                optimizer.zero_grad()
+                
+                log_probs = F.log_softmax(logits, dim=1)
+                total_batch_loss = loss_fn(log_probs, targets_dist)
+
+                total_batch_loss.backward()
+                optimizer.step()
+                total_loss += total_batch_loss.item()
+            else:
+                # Evaluation Logic
+                probs = F.softmax(logits, dim=1)
+                # Calculate Expected Value (weighted sum of scores)
+                batch_expected_values = torch.sum(probs * score_values, dim=1)
+                
+                predictions_expected_value.extend(batch_expected_values.cpu().numpy())
+                gold_choices.extend(batch['choices'])
+                gold_averages.extend(batch['target_average'].cpu().numpy())
+
+    if is_training:
+        return total_loss / len(data_loader)
+    else:
+        return predictions_expected_value, gold_choices, gold_averages
+</file>
+
+<file path="src/architecture.py">
+import torch
+import torch.nn as nn
+import re
+from transformers import AutoModel
+
+def levenshtein_distance(s1, s2):
+    if len(s1) < len(s2):
+        return levenshtein_distance(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+    previous_row = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+    return previous_row[-1]
+
+def get_best_match_span(text, target_word):
+    """
+    Finds the start and end character indices of the target word in the text.
+    Priority: 1. Strict (Word Boundary) -> 2. Loose (Substring) -> 3. Fuzzy (Levenshtein)
+    Returns: (start, end) tuple or None
+    """
+    target_word_esc = re.escape(target_word)
+    
+    # 1. Strict Match (\bWORD\b)
+    match = re.search(r'\b' + target_word_esc + r'\b', text, re.IGNORECASE)
+    if match:
+        return match.span()
+
+    # 2. Loose Match (Substring)
+    match = re.search(target_word_esc, text, re.IGNORECASE)
+    if match:
+        return match.span()
+
+    # 3. Fuzzy Match (Levenshtein distance on words)
+    best_dist = float('inf')
+    best_span = None
+    target_lower = target_word.lower()
+    
+    # Iterate through all word-like tokens in the text
+    for m in re.finditer(r'\b\w+\b', text):
+        word_in_text = m.group()
+        dist = levenshtein_distance(word_in_text.lower(), target_lower)
+        
+        if dist < best_dist:
+            best_dist = dist
+            best_span = m.span()
+            
+    return best_span
+
+def inject_meaning(text, target_word, meaning):
+    """
+    Injects the meaning in brackets immediately after the target word.
+    Uses the robust get_best_match_span to find where to insert.
+    """
+    span = get_best_match_span(text, target_word)
+    
+    if span:
+        _, end = span
+        # Insert meaning immediately after the word found
+        return text[:end] + f" ({meaning})" + text[end:]
+    else:
+        # Fallback: Append at the end
+        return f"{text} ({meaning})"
+
+class HybridModel_(nn.Module):
+    def __init__(self, model_name):
+        super().__init__()
+        self.bert = AutoModel.from_pretrained(model_name)
+        hidden_size = self.bert.config.hidden_size
+        
+        # Input size is 5 * hidden_size (u, v, |u-v|, u*v, cls)
+        self.ffn = nn.Sequential(
+            nn.Linear(hidden_size * 5, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, 64),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(64, 5)
+        )
+
+    def forward(self, input_ids, attention_mask, story_homonym_mask, sense_homonym_mask, token_type_ids=None, **kwargs):
+        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+        last_hidden = outputs.last_hidden_state # [Batch, Seq, Hidden]
+
+        # 1. Global CLS Embedding
+        cls_embedding = last_hidden[:, 0, :]
+
+        # 2. Story Homonym Embedding (u)
+        story_mask_expanded = story_homonym_mask.unsqueeze(-1)
+        u = torch.sum(last_hidden * story_mask_expanded, dim=1) / torch.clamp(story_mask_expanded.sum(dim=1), min=1e-9)
+
+        # 3. Sense Homonym Embedding (v)
+        sense_mask_expanded = sense_homonym_mask.unsqueeze(-1)
+        v = torch.sum(last_hidden * sense_mask_expanded, dim=1) / torch.clamp(sense_mask_expanded.sum(dim=1), min=1e-9)
+
+        # 4. Combine Features
+        features = torch.cat([u, v, torch.abs(u - v), u * v, cls_embedding], dim=1)
+        
+        logits = self.ffn(features)
+        
+        return logits
+
+class HybridModel(nn.Module):
+    def __init__(self, model_name):
+        super().__init__()
+        self.bert = AutoModel.from_pretrained(model_name)
+        hidden_size = self.bert.config.hidden_size
+        
+        # Input size is 5 * hidden_size (u, v, |u-v|, u*v, cls)
+        self.ffn = nn.Sequential(
+            nn.Linear(hidden_size * 5, hidden_size),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(hidden_size, 5)
+        )
+
+    def forward(self, input_ids, attention_mask, story_homonym_mask, sense_homonym_mask, token_type_ids=None, **kwargs):
+        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+        last_hidden = outputs.last_hidden_state # [Batch, Seq, Hidden]
+
+        # 1. Global CLS Embedding
+        cls_embedding = last_hidden[:, 0, :]
+
+        # 2. Story Homonym Embedding (u)
+        story_mask_expanded = story_homonym_mask.unsqueeze(-1)
+        u = torch.sum(last_hidden * story_mask_expanded, dim=1) / torch.clamp(story_mask_expanded.sum(dim=1), min=1e-9)
+
+        # 3. Sense Homonym Embedding (v)
+        sense_mask_expanded = sense_homonym_mask.unsqueeze(-1)
+        v = torch.sum(last_hidden * sense_mask_expanded, dim=1) / torch.clamp(sense_mask_expanded.sum(dim=1), min=1e-9)
+
+        # 4. Combine Features
+        features = torch.cat([u, v, torch.abs(u - v), u * v, cls_embedding], dim=1)
+        
+        logits = self.ffn(features)
+        return logits
+
+class HybridProcessor:
+    def __call__(self, tokenizer, sample, max_len):
+        homonym = sample['homonym']
+        
+        story_text = f"{sample['precontext']} {sample['sentence']} {sample['ending']}"
+        sense_text = inject_meaning(sample['example_sentence'], homonym, sample['judged_meaning'])
+
+        # Tokenize Pair
+        encoding = tokenizer(
+            text=story_text, 
+            text_pair=sense_text, 
+            max_length=max_len, 
+            padding='max_length', 
+            truncation=True, 
+            return_offsets_mapping=True, 
+            return_tensors='pt'
+        )
+
+        # Identify spans in original strings
+        story_span = get_best_match_span(story_text, homonym)
+        sense_span = get_best_match_span(sense_text, homonym)
+
+        # Identify token locations
+        offsets = encoding['offset_mapping'].squeeze()
+        sequence_ids = encoding.sequence_ids() # [None, 0, 0, ..., None, 1, 1, ... None]
+        
+        story_mask = torch.zeros(max_len)
+        sense_mask = torch.zeros(max_len)
+
+        for idx, (ts, te) in enumerate(offsets):
+            if ts == te: continue # Skip special tokens
+            
+            seq_id = sequence_ids[idx]
+            
+            # Check Story (Sequence 0)
+            if seq_id == 0 and story_span:
+                if ts >= story_span[0] and te <= story_span[1]:
+                    story_mask[idx] = 1.0
+            
+            # Check Sense (Sequence 1)
+            elif seq_id == 1 and sense_span:
+                if ts >= sense_span[0] and te <= sense_span[1]:
+                    sense_mask[idx] = 1.0
+
+        # Fallback: If truncation cut off the word in either part, point mask to CLS to avoid NaN
+        if story_mask.sum() == 0: story_mask[0] = 1.0
+        if sense_mask.sum() == 0: sense_mask[0] = 1.0
+
+        inputs = {
+            'input_ids': encoding['input_ids'].flatten(),
+            'attention_mask': encoding['attention_mask'].flatten(),
+            'story_homonym_mask': story_mask,
+            'sense_homonym_mask': sense_mask
+        }
+        
+        if 'token_type_ids' in encoding:
+            inputs['token_type_ids'] = encoding['token_type_ids'].flatten()
+            
+        return inputs
+
+ARCHITECTURE_REGISTRY = {
+    'hybrid': {
+        'model_class': HybridModel,
+        'processor': HybridProcessor()
+    }
+}
+
+def get_architecture(arch_name):
+    if arch_name not in ARCHITECTURE_REGISTRY:
+        raise ValueError(f"Unknown architecture: {arch_name}. Available: {list(ARCHITECTURE_REGISTRY.keys())}")
+    return ARCHITECTURE_REGISTRY[arch_name]
+</file>
+
+<file path="src/dataset.py">
+import json
+import torch
+from torch.utils.data import Dataset
+from torch.utils.data.dataloader import default_collate
+
+class AmbiStoryDataset(Dataset):
+    def __init__(self, file_path, tokenizer, processor, max_len=256):
+        """
+        Args:
+            file_path (str): Path to json data.
+            tokenizer: HF Tokenizer.
+            processor: Processor function/class from architecture.
+            max_len (int): Max sequence length.
+        """
+        self.tokenizer = tokenizer
+        self.processor = processor
+        self.max_len = max_len
+        
+        with open(file_path, 'r') as f:
+            self.data = json.load(f)
+        
+        self.samples = []
+        for sample_id, content in self.data.items():
+            content['id'] = sample_id
+            self.samples.append(content)
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        sample = self.samples[idx]
+        
+        # Processor handles text
+        inputs = self.processor(self.tokenizer, sample, self.max_len)
+
+        # --- Calculate Label Distribution ---
+        # Create a zero tensor for 5 classes (scores 1, 2, 3, 4, 5)
+        distribution = torch.zeros(5, dtype=torch.float)
+        
+        # Safely get fields that might be missing or placeholders in test set
+        raw_choices = sample.get('choices', [])
+        raw_avg = sample.get('average', 0.0)
+        raw_stdev = sample.get('stdev', 0.0)
+        
+        # 1. Handle Choices
+        # In test set, choices might be "(???)" or similar strings.
+        valid_choices = []
+        if isinstance(raw_choices, list):
+            for c in raw_choices:
+                if isinstance(c, (int, float)) and 1 <= c <= 5:
+                    distribution[int(c)-1] += 1
+                    valid_choices.append(c)
+            
+            # Normalize
+            if distribution.sum() > 0:
+                distribution = distribution / distribution.sum()
+        else:
+            # If choices is "(???)" or None, treat as empty
+            valid_choices = []
+
+        # 2. Handle Average & Stdev
+        # Ensure they are floats; otherwise default to 0.0
+        try:
+            avg = float(raw_avg)
+        except (ValueError, TypeError):
+            avg = 0.0
+            
+        try:
+            stdev = float(raw_stdev)
+        except (ValueError, TypeError):
+            stdev = 0.0
+
+        targets = {
+            'id': sample['id'],
+            'target_average': torch.tensor(avg, dtype=torch.float),
+            'target_stdev': torch.tensor(stdev, dtype=torch.float),
+            'target_distribution': distribution,
+            'choices': valid_choices 
+        }
+        
+        return {**inputs, **targets}
+
+def custom_collate_fn(batch):
+    choices_list = [item.pop('choices') for item in batch]
+    ids_list = [item.pop('id') for item in batch]
+    collated_batch = default_collate(batch)
+    collated_batch['choices'] = choices_list
+    collated_batch['id'] = ids_list
+    return collated_batch
+</file>
+
+<file path="baselines/majority_baseline.py">
+import json
+import random
+
+SET = "dev"
+
+MAJORITY_LABEL = 4  # majority label on the test set.
+OUTPUT_FILEPATH = "predictions/majority_predictions_dev.jsonl"
+
+if __name__ == "__main__":
+    pred_list = []
+    with open("data/" + SET + ".json", "r") as f:
+        gold_data = json.load(f)
+
+    for i in gold_data:
+        pred_list.append({"id": i, "prediction": MAJORITY_LABEL})
+
+    with open(OUTPUT_FILEPATH, "w") as f:
+        for pred in pred_list:
+            f.write(json.dumps(pred) + "\n")
+</file>
+
+<file path="baselines/random_baseline.py">
+import json
+import random
+
+SET = "dev"
+labels = [1, 2, 3, 4, 5]
+OUTPUT_FILEPATH = "predictions/random_predictions_dev.jsonl"
+
+if __name__ == "__main__":
+    pred_list = []
+    with open("data/" + SET + ".json", "r") as f:
+        gold_data = json.load(f)
+
+    for i in gold_data:
+        random.shuffle(labels)
+        pred_list.append({"id": i, "prediction": labels[0]})
+
+    with open(OUTPUT_FILEPATH, "w") as f:
+        for pred in pred_list:
+            f.write(json.dumps(pred) + "\n")
+</file>
+
+<file path="sample_prediction.jsonl">
+{"id": 1, "prediction": 3}
+{"id": 2, "prediction": 2}
+{"id": 3, "prediction": 4}
+</file>
+
+<file path="README.md">
+# semeval26-05-scripts
+Some scripts for Semeval 2026 Task 5. Equivalent to the scoring script on the CodaBench task. More baselines to be added later.
+
+Link to submission website: https://www.codabench.org/competitions/10877/?secret_key=e3c13419-88c6-4c13-9989-8e694a2bc5c0
+
+# How to evaluate predictions
+
+First, remember to install the requirements.
+
+To evaluate a prediction, please format it like the "predictions/[...].jsonl" files.
+Each prediction must be in its own line. The "id" key corresponds to the keys of the samples in the gold data ("0", "1", etc).
+The prediction key should be an integer between 1 and 5.
+
+Once you prepared your prediction data, put it in the input/res/ folder (replacing the existing file) and call the evaluation script like this:
+
+```
+python scoring.py input/ref/solution.jsonl input/res/predictions.jsonl output/scores.json
+```
+
+Scores will be printed and written on output/scores.json. If your predictions file contains bad formatting or is incomplete, it will print an error.
+
+To submit to CodaBench, zip the predictions.jsonl up and upload it to the "My Submissions" tab on the task website.
+
+Test set is yet unreleased, so you can only test on the dev set for now. The samples (including labels) are public here: https://github.com/Janosch-Gehring/ambistory
+
+
+# Notes
+
+### Install
+```
+conda install pytorch pytorch-cuda=12.1 scipy=1.16.2 -c pytorch -c nvidia -c conda-forge --yes
+python -m pip install scipy==1.16.2 transformers accelerate tqdm
+```
+
+### Train: Run train.py to create a model.
+```
+python train.py
+```
+
+### Predict: Run predict.py to generate a .jsonl file using that model.
+```
+python predict.py --config configs/config.yaml --checkpoint_path outputs/hybrid_nli-mpnet-base-v2/checkpoints/model.pt --input_file data/dev.json --output_file predictions/hybrid_nli-mpnet-base-v2_predictions_dev.jsonl
+```
+
+### Score: Run evaluate.py (for a quick look) or scoring.py (to generate the official score file) to see how good those predictions were.
+```
+python evaluate.py predictions/hybrid_nli-mpnet-base-v2_predictions_dev.jsonl dev
+python scoring.py input/ref/solution.jsonl predictions/hybrid_nli-mpnet-base-v2_predictions_dev.jsonl scores.json
+```
+
+
+</file>
+
+<file path="train.py">
+import os
+import yaml
+import argparse
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+from transformers import AutoTokenizer
+from torch.optim import AdamW
+from scipy.stats import spearmanr
+
+from src.dataset import AmbiStoryDataset, custom_collate_fn
+from src.architecture import get_architecture
+from src.trainer import run_epoch
+from evaluate import is_within_standard_deviation
+
+def main(config_path):
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    # --- Setup Directories ---
+    output_dir = config['training']['output_dir']
+    checkpoint_dir = os.path.join(output_dir, 'checkpoints')
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    # --- Architecture Setup ---
+    arch_name = config['model']['architecture']
+    print(f" initializing {arch_name}...")
+    
+    # Get the specific classes from registry
+    arch_config = get_architecture(arch_name)
+    ModelClass = arch_config['model_class']
+    input_processor = arch_config['processor']
+
+    # --- Data & Model ---
+    tokenizer = AutoTokenizer.from_pretrained(config['model']['name'])
+    
+    print("Loading Train Data...")
+    train_ds = AmbiStoryDataset('data/train.json', tokenizer, input_processor, config['training']['max_len'])
+
+    print("Loading Dev Data...")
+    dev_ds = AmbiStoryDataset('data/dev.json', tokenizer, input_processor, config['training']['max_len'])
+
+    train_loader = DataLoader(train_ds, batch_size=config['training']['batch_size'], shuffle=True, collate_fn=custom_collate_fn)
+    dev_loader = DataLoader(dev_ds, batch_size=config['training']['batch_size'], shuffle=False, collate_fn=custom_collate_fn)
+
+    model = ModelClass(config['model']['name']).to(device)
+
+    # ============================================================
+    # OPTIMIZER SETUP (Freezing + Differential LR)
+    # ============================================================
+    
+    # Handle Freezing (Optional)
+    if config['training'].get('freeze_backbone', False):
+        print("--> Freezing Backbone Weights")
+        for name, param in model.named_parameters():
+            # We freeze everything EXCEPT the head (ffn/classifier)
+            if "ffn" in name or "classifier" in name:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
+
+    # Define Learning Rates
+    base_lr = float(config['training']['learning_rate'])
+    head_lr = base_lr * 10  # Head learns 10x faster
+    
+    # Create Parameter Groups
+    optimizer_grouped_parameters = [
+        {
+            "params": [
+                p for n, p in model.named_parameters() 
+                if ("ffn" in n or "classifier" in n) and p.requires_grad
+            ],
+            "lr": head_lr,
+        },
+        {
+            "params": [
+                p for n, p in model.named_parameters() 
+                if not ("ffn" in n or "classifier" in n) and p.requires_grad
+            ],
+            "lr": base_lr,
+        },
+    ]
+
+    optimizer = AdamW(optimizer_grouped_parameters)
+
+    # KLDivLoss with 'batchmean' (for distribution learning)
+    loss_fn = nn.KLDivLoss(reduction='batchmean') 
+
+    best_accuracy = 0.0
+
+    for epoch in range(config['training']['epochs']):
+        print(f"\n--- Epoch {epoch + 1} ---")
+        
+        train_loss = run_epoch(model, train_loader, optimizer, device, loss_fn, is_training=True)
+        print(f"Train Loss: {train_loss:.4f}")
+
+        # Evaluation
+        preds, choices, avgs = run_epoch(model, dev_loader, None, device, is_training=False)
+
+        # Metrics
+        spearman = spearmanr(preds, avgs)[0]
+        
+        # Accuracy calc (rounding the Expected Value)
+        int_preds = [max(1, min(5, round(p))) for p in preds]
+        correct = sum([1 for i, p in enumerate(int_preds) if is_within_standard_deviation(p, choices[i])])
+        accuracy = correct / len(int_preds)
+
+        print(f"Spearman: {spearman:.4f} | Accuracy: {accuracy:.4f}")
+
+        if accuracy >= best_accuracy:
+            best_accuracy = accuracy
+            torch.save(model.state_dict(), os.path.join(checkpoint_dir, 'best_model.pt'))
+            print("-> Saved Best Model")
+            
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, default='configs/config.yaml')
+    args = parser.parse_args()
+    main(args.config)
+</file>
+
+<file path="configs/config.yaml">
+model:
+  name: 'sentence-transformers/nli-mpnet-base-v2'
+  architecture: 'hybrid'
+training:
+  output_dir: './outputs/hybrid_nli-mpnet-base-v2'
+  epochs: 10
+  learning_rate: 5e-6  # Head learns 10x faster
+  freeze_backbone: false
+  batch_size: 4
+  max_len: 256
+</file>
+
+<file path="scores.json">
+{"accuracy": 0.7346938775510204, "spearman": 0.5793966575021617}
+</file>
+
+<file path="metadata.yaml">
+command: python -u scoring.py /app/program/input/ref/solution.jsonl /app/input/res/predictions.jsonl /app/output/scores.json
+</file>
+
+<file path="predict.py">
+import json
+import torch
+import argparse
+import yaml
+from transformers import AutoTokenizer
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+import torch.nn.functional as F
+
+from src.dataset import AmbiStoryDataset, custom_collate_fn
+from src.architecture import get_architecture
+
+def predict(model, data_loader, device):
+    model.eval()
+    results = []
+
+    # Vector of scores [1, 2, 3, 4, 5] for Expected Value calculation
+    score_values = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0]).to(device)
+    
+    non_input_keys = ['id', 'choices', 'target_average', 'target_stdev', 'target_distribution']
+
+    with torch.no_grad():
+        for batch in tqdm(data_loader, desc="Predicting"):
+            inputs = {k: v.to(device) for k, v in batch.items() if k not in non_input_keys}
+            ids = batch['id']
+
+            outputs = model(**inputs)
+            
+            # Extract logits if output is a dictionary
+            if isinstance(outputs, dict):
+                outputs = outputs["logits"]
+
+            # --- DYNAMICALLY HANDLE OUTPUT ---
+            # If output is regression (shape [B, 1] or [B])
+            if outputs.ndim <= 1 or outputs.shape[1] == 1:
+                preds = torch.clamp(outputs.squeeze(), 1, 5)
+            # If output is distribution (shape [B, 5])
+            else:
+                probs = F.softmax(outputs, dim=1)
+                # Calculate Expected Value
+                preds = torch.sum(probs * score_values, dim=1)
+            
+            final_preds = torch.round(preds).int()
+            final_preds = torch.clamp(final_preds, 1, 5)
+
+            # Handle single item batch edge case
+            if final_preds.ndim == 0:
+                final_preds = final_preds.unsqueeze(0)
+
+            for i in range(len(ids)):
+                results.append({"id": ids[i], "prediction": final_preds[i].item()})
+
+    return results
+
+def main(args):
+    with open(args.config, 'r') as f:
+        config = yaml.safe_load(f)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # --- Architecture Setup ---
+    arch_name = config['model']['architecture']
+    model_name = config['model']['name']
+    arch_config = get_architecture(arch_name)
+    ModelClass = arch_config['model_class']
+    input_processor = arch_config['processor']
+    
+    print(f"Loading {arch_name} model from {args.checkpoint_path}...")
+    model = ModelClass(model_name)
+    model.load_state_dict(torch.load(args.checkpoint_path, map_location=device))
+    model.to(device)
+
+    # --- Data Loading ---
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    dataset = AmbiStoryDataset(args.input_file, tokenizer, input_processor, config['training']['max_len'])
+    
+    # Use batch_size from config for consistency, but allow override
+    batch_size = config['training'].get('batch_size', 8)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=custom_collate_fn)
+
+    # --- Prediction ---
+    predictions = predict(model, loader, device)
+    
+    # Sort by ID to ensure submission order is correct
+    predictions.sort(key=lambda x: int(x['id']))
+
+    # --- Save Results ---
+    with open(args.output_file, 'w') as f:
+        for pred in predictions:
+            f.write(json.dumps(pred) + '\n')
+    print(f"Predictions saved to {args.output_file}")
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, required=True, help='Path to the training config used (to determine architecture)')
+    parser.add_argument('--checkpoint_path', type=str, required=True, help='Path to the best_model.pt checkpoint')
+    parser.add_argument('--input_file', type=str, default='data/dev.json', help='Path to input data (dev.json or test.json)')
+    parser.add_argument('--output_file', type=str, default='input/res/predictions.jsonl', help='Output path for predictions.jsonl')
+    args = parser.parse_args()
+    main(args)
+</file>
+
+<file path="predictions/random_predictions_dev.jsonl">
+{"id": "0", "prediction": 5}
+{"id": "1", "prediction": 4}
+{"id": "2", "prediction": 2}
+{"id": "3", "prediction": 3}
+
+</file>
+
+<file path="predictions/hybrid_nli-mpnet-base-v2_predictions_dev.jsonl">
+{"id": "0", "prediction": 5}
+{"id": "1", "prediction": 3}
+{"id": "2", "prediction": 4}
+{"id": "3", "prediction": 4}
+{"id": "4", "prediction": 4}
+
+</file>
+
+<file path="predictions/hybrid_nli-mpnet-base-v2_predictions_test.jsonl">
+{"id": "0", "prediction": 4}
+{"id": "1", "prediction": 3}
+{"id": "2", "prediction": 4}
+{"id": "3", "prediction": 4}
+{"id": "4", "prediction": 4}
+
+</file>
+
+<file path="predictions/majority_predictions_dev.jsonl">
+{"id": "0", "prediction": 4}
+{"id": "1", "prediction": 4}
+{"id": "2", "prediction": 4}
+{"id": "3", "prediction": 4}
+{"id": "4", "prediction": 4}
+
+</file>
+
+</source>
+</onefilellm_output>

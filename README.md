@@ -22,3 +22,29 @@ Scores will be printed and written on output/scores.json. If your predictions fi
 To submit to CodaBench, zip the predictions.jsonl up and upload it to the "My Submissions" tab on the task website.
 
 Test set is yet unreleased, so you can only test on the dev set for now. The samples (including labels) are public here: https://github.com/Janosch-Gehring/ambistory
+
+
+# Notes
+
+### Install
+```
+conda install pytorch pytorch-cuda=12.1 scipy=1.16.2 -c pytorch -c nvidia -c conda-forge --yes
+python -m pip install scipy==1.16.2 transformers accelerate tqdm
+```
+
+### Train: Run train.py to create a model.
+```
+python train.py
+```
+
+### Predict: Run predict.py to generate a .jsonl file using that model.
+```
+python predict.py --config configs/config.yaml --checkpoint_path outputs/hybrid_nli-mpnet-base-v2/checkpoints/model.pt --input_file data/dev.json --output_file predictions/hybrid_nli-mpnet-base-v2_predictions_dev.jsonl
+```
+
+### Score: Run evaluate.py (for a quick look) or scoring.py (to generate the official score file) to see how good those predictions were.
+```
+python evaluate.py predictions/hybrid_nli-mpnet-base-v2_predictions_dev.jsonl dev
+python scoring.py input/ref/solution.jsonl predictions/hybrid_nli-mpnet-base-v2_predictions_dev.jsonl scores.json
+```
+

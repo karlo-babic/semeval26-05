@@ -15,7 +15,16 @@ def check_formatting(filepath: str, gold_data: dict) -> bool:
         lines = f.readlines()
     questionable_lines = []
     error_lines = []
-    expected_ids = [v["id"] for v in gold_data]
+
+    # Handle both data formats: dict (from dev.json) and list (from solution.jsonl)
+    if isinstance(gold_data, dict):
+        expected_ids = list(gold_data.keys())
+    elif isinstance(gold_data, list):
+        expected_ids = [str(item['id']) for item in gold_data]
+    else:
+        print("Error: Unknown gold_data format in format_check.py")
+        return False
+
     line_ids = []
     missing_lines = []
 
