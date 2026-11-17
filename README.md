@@ -1,3 +1,13 @@
+# SemTechLab at SemEval-2026 Task 5: HINTS
+
+This repository contains the code of the **SemTechLab** system (**HINTS**) for SemEval-2026 Task 5: *Rating Plausibility of Word Senses in Ambiguous Sentences through Narrative Understanding*. HINTS is a hybrid Transformer model (based on `nli-mpnet-base-v2`) that uses span-specific embeddings of the target homonym and interaction features between the story context and the sense definition. The task data and scoring scripts are provided by the task organizers ([ambistory](https://github.com/Janosch-Gehring/ambistory), [semeval26-05-scripts](https://github.com/Janosch-Gehring/semeval26-05-scripts)).
+
+**Citation.** If you use this code, please cite:
+
+> Babić, K., Meštrović, A., & Beliga, S. (2026). SemTechLab at SemEval-2026 Task 5: Context-Aware Homonym Disambiguation via Span-Specific Interaction Features. In *Proceedings of the 20th International Workshop on Semantic Evaluation (SemEval-2026)* (pp. 2245–2250). ACL. https://doi.org/10.18653/v1/2026.semeval-1.284
+
+**Acknowledgements.** This research was supported by the project *Hybrid AI Approaches to Natural Language Processing and Knowledge Generation – HyAI* (uniri-iz-25-215), funded by the European Union – NextGenerationEU.
+
 # semeval26-05 -> task scripts cloned from [semeval26-05-scripts](https://github.com/Janosch-Gehring/semeval26-05-scripts)
 Some scripts for Semeval 2026 Task 5. Equivalent to the scoring script on the CodaBench task. More baselines to be added later.
 
